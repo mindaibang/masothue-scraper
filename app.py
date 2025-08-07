@@ -5,50 +5,56 @@ from bs4 import BeautifulSoup
 from io import BytesIO
 
 # -----------------------------
-# Hàm lấy dữ liệu từ masothue.com (cập nhật cấu trúc mới)
+# Hàm lấy dữ liệu từ masothue.com theo HTML mới
 # -----------------------------
 def scrape_masothue(pages=1):
-    base_url = "https://masothue.com/tra-cuu-ma-so-thue-theo-loai-hinh-doanh-nghiep/ho-kinh-doanh-ca-the-20?page="
+    base_url = ("https://masothue.com/tra-cuu-ma-so-thue-theo-loai-hinh-doanh-nghiep/"
+                "ho-kinh-doanh-ca-the-20?page=")
     results = []
 
     for page in range(1, pages + 1):
         url = base_url + str(page)
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-        soup = BeautifulSoup(response.text, 'html.parser')
+        try:
+            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+            soup = BeautifulSoup(res.text, 'html.parser')
 
-        listings = soup.select("div.tax-listing > div[data-prefetch]")
+            # Mỗi hộ KD hiển thị trong thẻ <div data-prefetch>
+            listings = soup.select("div.tax-listing > div[data-prefetch]")
 
-        for listing in listings:
-            # Tên hộ KD
-            name_tag = listing.select_one("h3 > a")
-            name = name_tag.get_text(strip=True) if name_tag else ""
+            for listing in listings:
+                # Tên hộ KD
+                name_tag = listing.select_one("h3 > a")
+                name = name_tag.get_text(strip=True) if name_tag else ""
 
-            # Địa chỉ
-            address_tag = listing.select_one("address")
-            address = address_tag.get_text(strip=True) if address_tag else ""
+                # Địa chỉ
+                address_tag = listing.select_one("address")
+                address = address_tag.get_text(strip=True) if address_tag else ""
 
-            # Mã số thuế & Người đại diện
-            divs = listing.find_all("div")
-            mst = ""
-            nguoidd = ""
-            for div in divs:
-                txt = div.get_text(strip=True)
-                if "Mã số thuế:" in txt:
-                    mst = txt.replace("Mã số thuế:", "").strip()
-                elif "Người đại diện:" in txt:
-                    nguoidd = txt.replace("Người đại diện:", "").strip()
+                # Mã số thuế & Người đại diện
+                divs = listing.find_all("div")
+                mst = ""
+                nguoidd = ""
+                for div in divs:
+                    txt = div.get_text(strip=True)
+                    if "Mã số thuế:" in txt:
+                        mst = txt.replace("Mã số thuế:", "").strip()
+                    elif "Người đại diện:" in txt:
+                        nguoidd = txt.replace("Người đại diện:", "").strip()
 
-            results.append({
-                "Tên hộ kinh doanh": name,
-                "Mã số thuế": mst,
-                "Người đại diện": nguoidd,
-                "Địa chỉ": address
-            })
+                results.append({
+                    "Tên hộ kinh doanh": name,
+                    "Mã số thuế": mst,
+                    "Người đại diện": nguoidd,
+                    "Địa chỉ": address
+                })
+
+        except Exception as e:
+            st.error(f"Lỗi khi tải trang {page}: {e}")
 
     return results
 
 # -----------------------------
-# Hàm chuyển DataFrame thành file Excel (dạng Bytes)
+# Chuyển DataFrame thành file Excel (RAM)
 # -----------------------------
 @st.cache_data
 def convert_df_to_excel(df):
@@ -71,7 +77,7 @@ if st.button("🚀 Tải dữ liệu"):
         df = pd.DataFrame(data)
 
         if df.empty:
-            st.warning("Không lấy được dữ liệu. Có thể trang bị thay đổi cấu trúc hoặc bị chặn.")
+            st.warning("⚠️ Không lấy được dữ liệu. Có thể đang bị chặn hoặc cấu trúc web thay đổi.")
         else:
             st.success(f"✅ Đã tải {len(df)} dòng từ {pages} trang.")
 
