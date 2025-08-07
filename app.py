@@ -2,7 +2,9 @@ import streamlit as st
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
+from io import BytesIO
 
+# Hàm lấy dữ liệu từ masothue.com
 def scrape_masothue(pages=1):
     base_url = "https://masothue.com/tra-cuu-ma-so-thue-theo-loai-hinh-doanh-nghiep/ho-kinh-doanh-ca-the-20?page="
     results = []
@@ -37,6 +39,15 @@ def scrape_masothue(pages=1):
 
     return results
 
+# Hàm chuyển DataFrame thành file Excel ảo trong RAM
+@st.cache_data
+def convert_df_to_excel(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Hộ KD')
+    processed_data = output.getvalue()
+    return processed_data
+
 # Giao diện Streamlit
 st.set_page_config(page_title="Tra cứu hộ kinh doanh cá thể", layout="wide")
 st.title("📋 Tra cứu hộ kinh doanh cá thể - masothue.com")
@@ -47,14 +58,12 @@ if st.button("Tải dữ liệu"):
     with st.spinner("Đang lấy dữ liệu..."):
         data = scrape_masothue(pages)
         df = pd.DataFrame(data)
-        st.success(f"Đã tải {len(df)} dòng dữ liệu.")
+        st.success(f"✅ Đã tải {len(df)} dòng dữ liệu từ {pages} trang.")
+
         st.dataframe(df, use_container_width=True)
 
-        @st.cache_data
-        def convert_df(df):
-            return df.to_excel(index=False, engine='openpyxl')
-
-        excel_data = convert_df(df)
+        # Tạo file Excel để tải về
+        excel_data = convert_df_to_excel(df)
 
         st.download_button(
             label="📥 Tải về Excel",
