@@ -3,9 +3,10 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from io import BytesIO
+import re
 
 # -----------------------------
-# Hàm lấy dữ liệu từ masothue.com theo HTML mới
+# Hàm lấy dữ liệu theo nhóm văn bản
 # -----------------------------
 def scrape_masothue(pages=1):
     base_url = ("https://masothue.com/tra-cuu-ma-so-thue-theo-loai-hinh-doanh-nghiep/"
@@ -18,35 +19,36 @@ def scrape_masothue(pages=1):
             res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
             soup = BeautifulSoup(res.text, 'html.parser')
 
-            # Mỗi hộ KD hiển thị trong thẻ <div data-prefetch>
-            listings = soup.select("div.tax-listing > div[data-prefetch]")
+            # Lấy phần danh sách hộ KD
+            section = soup.find("div", class_="tax-listing")
+            if not section:
+                continue
 
-            for listing in listings:
-                # Tên hộ KD
-                name_tag = listing.select_one("h3 > a")
-                name = name_tag.get_text(strip=True) if name_tag else ""
+            # Trích toàn bộ đoạn text, bỏ các đoạn không liên quan
+            raw_text = section.get_text(separator="\n").strip()
 
-                # Địa chỉ
-                address_tag = listing.select_one("address")
-                address = address_tag.get_text(strip=True) if address_tag else ""
+            # Tách từng dòng
+            lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
+            i = 0
+            while i < len(lines) - 3:
+                name = lines[i]
+                mst_line = lines[i+1]
+                nguoidd_line = lines[i+2]
+                diachi = lines[i+3]
 
-                # Mã số thuế & Người đại diện
-                divs = listing.find_all("div")
-                mst = ""
-                nguoidd = ""
-                for div in divs:
-                    txt = div.get_text(strip=True)
-                    if "Mã số thuế:" in txt:
-                        mst = txt.replace("Mã số thuế:", "").strip()
-                    elif "Người đại diện:" in txt:
-                        nguoidd = txt.replace("Người đại diện:", "").strip()
-
-                results.append({
-                    "Tên hộ kinh doanh": name,
-                    "Mã số thuế": mst,
-                    "Người đại diện": nguoidd,
-                    "Địa chỉ": address
-                })
+                # Xác định có phải đúng mẫu không
+                if mst_line.startswith("Mã số thuế:") and nguoidd_line.startswith("Người đại diện:"):
+                    mst = mst_line.replace("Mã số thuế:", "").strip()
+                    nguoidd = nguoidd_line.replace("Người đại diện:", "").strip()
+                    results.append({
+                        "Tên hộ kinh doanh": name,
+                        "Mã số thuế": mst,
+                        "Người đại diện": nguoidd,
+                        "Địa chỉ": diachi
+                    })
+                    i += 4
+                else:
+                    i += 1
 
         except Exception as e:
             st.error(f"Lỗi khi tải trang {page}: {e}")
@@ -54,7 +56,7 @@ def scrape_masothue(pages=1):
     return results
 
 # -----------------------------
-# Chuyển DataFrame thành file Excel (RAM)
+# Xuất Excel
 # -----------------------------
 @st.cache_data
 def convert_df_to_excel(df):
@@ -77,10 +79,9 @@ if st.button("🚀 Tải dữ liệu"):
         df = pd.DataFrame(data)
 
         if df.empty:
-            st.warning("⚠️ Không lấy được dữ liệu. Có thể đang bị chặn hoặc cấu trúc web thay đổi.")
+            st.warning("⚠️ Không lấy được dữ liệu. Có thể trang đang chặn hoặc đổi cấu trúc.")
         else:
             st.success(f"✅ Đã tải {len(df)} dòng từ {pages} trang.")
-
             st.dataframe(df, use_container_width=True)
 
             excel_data = convert_df_to_excel(df)
