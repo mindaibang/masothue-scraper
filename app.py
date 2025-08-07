@@ -4,7 +4,9 @@ import requests
 from bs4 import BeautifulSoup
 from io import BytesIO
 
-# Hàm lấy dữ liệu từ masothue.com
+# -----------------------------
+# Hàm lấy dữ liệu từ masothue.com (cập nhật cấu trúc mới)
+# -----------------------------
 def scrape_masothue(pages=1):
     base_url = "https://masothue.com/tra-cuu-ma-so-thue-theo-loai-hinh-doanh-nghiep/ho-kinh-doanh-ca-the-20?page="
     results = []
@@ -13,61 +15,73 @@ def scrape_masothue(pages=1):
         url = base_url + str(page)
         response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
         soup = BeautifulSoup(response.text, 'html.parser')
-        items = soup.select(".tax-listing .media")
 
-        for item in items:
-            name = item.select_one("h3").get_text(strip=True)
-            detail_lines = item.select("p")
+        listings = soup.select("div.tax-listing > div[data-prefetch]")
+
+        for listing in listings:
+            # Tên hộ KD
+            name_tag = listing.select_one("h3 > a")
+            name = name_tag.get_text(strip=True) if name_tag else ""
+
+            # Địa chỉ
+            address_tag = listing.select_one("address")
+            address = address_tag.get_text(strip=True) if address_tag else ""
+
+            # Mã số thuế & Người đại diện
+            divs = listing.find_all("div")
             mst = ""
             nguoidd = ""
-            diachi = ""
-            for line in detail_lines:
-                txt = line.get_text(strip=True)
-                if txt.startswith("Mã số thuế:"):
+            for div in divs:
+                txt = div.get_text(strip=True)
+                if "Mã số thuế:" in txt:
                     mst = txt.replace("Mã số thuế:", "").strip()
-                elif txt.startswith("Người đại diện:"):
+                elif "Người đại diện:" in txt:
                     nguoidd = txt.replace("Người đại diện:", "").strip()
-                else:
-                    diachi = txt.strip()
 
             results.append({
                 "Tên hộ kinh doanh": name,
                 "Mã số thuế": mst,
                 "Người đại diện": nguoidd,
-                "Địa chỉ": diachi
+                "Địa chỉ": address
             })
 
     return results
 
-# Hàm chuyển DataFrame thành file Excel ảo trong RAM
+# -----------------------------
+# Hàm chuyển DataFrame thành file Excel (dạng Bytes)
+# -----------------------------
 @st.cache_data
 def convert_df_to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Hộ KD')
-    processed_data = output.getvalue()
-    return processed_data
+        df.to_excel(writer, index=False, sheet_name='HoKD')
+    return output.getvalue()
 
-# Giao diện Streamlit
-st.set_page_config(page_title="Tra cứu hộ kinh doanh cá thể", layout="wide")
-st.title("📋 Tra cứu hộ kinh doanh cá thể - masothue.com")
+# -----------------------------
+# Giao diện chính
+# -----------------------------
+st.set_page_config(page_title="Tra cứu hộ KD cá thể", layout="wide")
+st.title("📋 Tra cứu hộ kinh doanh cá thể từ masothue.com")
 
-pages = st.slider("Chọn số trang cần lấy", min_value=1, max_value=10, value=3)
+pages = st.slider("🔢 Chọn số trang muốn tải", min_value=1, max_value=10, value=3)
 
-if st.button("Tải dữ liệu"):
-    with st.spinner("Đang lấy dữ liệu..."):
+if st.button("🚀 Tải dữ liệu"):
+    with st.spinner("Đang tải dữ liệu..."):
         data = scrape_masothue(pages)
         df = pd.DataFrame(data)
-        st.success(f"✅ Đã tải {len(df)} dòng dữ liệu từ {pages} trang.")
 
-        st.dataframe(df, use_container_width=True)
+        if df.empty:
+            st.warning("Không lấy được dữ liệu. Có thể trang bị thay đổi cấu trúc hoặc bị chặn.")
+        else:
+            st.success(f"✅ Đã tải {len(df)} dòng từ {pages} trang.")
 
-        # Tạo file Excel để tải về
-        excel_data = convert_df_to_excel(df)
+            st.dataframe(df, use_container_width=True)
 
-        st.download_button(
-            label="📥 Tải về Excel",
-            data=excel_data,
-            file_name="ho_kinh_doanh.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            excel_data = convert_df_to_excel(df)
+
+            st.download_button(
+                label="📥 Tải về Excel",
+                data=excel_data,
+                file_name="ho_kinh_doanh.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
